@@ -83,6 +83,53 @@ struct {
                          // Retevis RT75 stop TX with low voltage
 } settings;
 """
+MEM_FORMAT_RT18 = """
+#seekto 0x0000;
+struct {
+    lbcd rxfreq[4];
+    lbcd txfreq[4];
+    lbcd rxtone[2];
+    lbcd txtone[2];
+    u8 speccode:1,       // Retevis RB87 PTT ID
+       compander:1,
+       scramble:1,
+       skip:1,
+       highpower:1,
+       narrow:1,
+       unknown2:1,
+       bcl:1;
+    u8 unknown3[3];
+} memory[%d];
+#seekto 0x03C0;
+struct {
+    u8 codesw:1,         // Retevis RB29 code switch
+       scanmode:1,
+       vox:1,            // Retevis RB19 VOX
+       speccode:1,
+       voiceprompt:2,
+       batterysaver:1,
+       beep:1;           // Retevis RB87 vox
+    u8 squelchlevel;
+    u8 sidekey2;         // Retevis RT22S setting
+                         // Retevis RB85 sidekey 1 short
+                         // Retevis RB19 sidekey 2 long
+                         // Retevis RT47 sidekey 1 long
+                         // Retevis RB87 sidekey 1 long
+    u8 timeouttimer;
+    u8 voxlevel;
+    u8 sidekey2S;
+    u8 unused;           // Selected channel
+    u8 voxdelay;
+    u8 sidekey1L;
+    u8 sidekey2L;
+    u8 unused2[3];
+    u8 unknown3:4,
+       unknown4:1,
+       unknown5:2,
+       power10w:1;       // Retevis RT85 power 10w on/off
+                         // Retevis RT75 stop TX with low voltage
+} settings;
+"""
 
 MEM_FORMAT_RB18 = """
 #seekto 0x0000;
@@ -774,7 +821,8 @@ class T18Radio(chirp_common.CloneModeRadio):
                               "RB75",
                               "RB87",
                               "RB629",
-                              "RT15"
+                              "RT15",
+                              "RT18"
                               ]:
             rs = RadioSetting("beep", "Beep",
                               RadioSettingValueBoolean(_settings.beep))
@@ -1457,6 +1505,25 @@ class RT15Radio(T18Radio):
         # This radio has always been post-metadata, so never do
         # old-school detection
         return False
+
+
+@directory.register
+class RT18Radio(T18Radio):
+    """RETEVIS RT18"""
+    VENDOR = "Retevis"
+    MODEL = "RT18"
+    ACK_BLOCK = False
+    CMD_EXIT = b"b"
+
+    POWER_LEVELS = [chirp_common.PowerLevel("High", watts=2.00),
+                    chirp_common.PowerLevel("Low",  watts=0.50)]
+
+    _magic = b"JSOGRAP"
+    _fingerprint = [b"\x06\x03\xE8\x08\xFF\xFF\xFF\xFF"]
+    _upper = 16
+    _mem_params = (_upper  # number of channels
+                   )
+    _frs16 = True  # sold as FRS radio but supports full band TX/RX
 
 
 @directory.register
