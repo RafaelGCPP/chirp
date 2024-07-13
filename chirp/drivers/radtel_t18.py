@@ -1524,6 +1524,11 @@ class RT18Radio(T18Radio):
     _mem_params = (_upper  # number of channels
                    )
     _frs16 = True  # sold as FRS radio but supports full band TX/RX
+    
+    def process_mmap(self):
+        self._memobj = bitwise.parse(MEM_FORMAT_RT18 %
+                                     self._mem_params, self._mmap)
+
 
 
 @directory.register
