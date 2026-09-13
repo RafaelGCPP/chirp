@@ -195,7 +195,7 @@ class RT18Radio(t18.T18Radio):
     VALID_BANDS = [(400000000, 470000000)]
 
     POWER_LEVELS = [chirp_common.PowerLevel("Low", watts=0.50),
-                   chirp_common.PowerLevel("High", watts=2.00)]
+                    chirp_common.PowerLevel("High", watts=2.00)]
 
     # 6 raw digit bytes read via the extra 0x05 step during handshake,
     # or b"\xff\xff\xff\xff\xff\xff" when no password is set. This is
