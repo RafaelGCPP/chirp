@@ -5,21 +5,25 @@
 # This driver was NOT written from vendor documentation or an official
 # CHIRP contribution -- it was derived entirely from passive USB capture
 # analysis (Wireshark + USBPcap) of the vendor's Windows CPS talking to a
-# real RT18 over its programming cable. It has not been verified against
-# the actual radio yet. Treat with caution:
+# real RT18 over its programming cable. Treat with caution:
 #
 #   * Channel memory (frequency, tones, power, narrow/wide, scan add,
 #     busy lock, scramble, compander, spec code) is expected to read
 #     correctly -- the block-read protocol and the 16-channel/16-byte
 #     layout at 0x0010-0x0110 were directly confirmed against captured
-#     traffic.
-#   * The "Other"/settings screen (squelch, timeout timer, VOX, beep,
-#     etc.) is INHERITED UNCHANGED from the Radtel T18 base class and
-#     has NOT been individually verified for the RT18 -- the exact
-#     offsets may differ. Don't trust those values yet.
+#     traffic. Reprogramming squelch tone/DCS code, wide/narrowband,
+#     and squelch level was tested end-to-end on a real unit (CHIRP
+#     write, then read back with the vendor CPS) and matched.
+#   * The rest of the "Other"/settings screen (timeout timer, VOX,
+#     beep, scan mode, battery save, etc.) is INHERITED UNCHANGED from
+#     the Radtel T18 base class and has NOT been individually tested
+#     on a real RT18 yet -- the exact offsets may differ. Don't trust
+#     those specific values until confirmed.
 #   * The 6-digit programming password (separate "Password" settings
 #     group below) IS confirmed against a real "set password" capture
-#     (rt18_write_password_to_radio.pcapng) -- see _PASSWORD_ADDR.
+#     (rt18_write_password_to_radio.pcapng) and was also tested
+#     end-to-end on a real unit (CHIRP write, then read back with the
+#     vendor CPS) -- see _PASSWORD_ADDR.
 #   * ALWAYS do a "read from radio" and save the image before ever
 #     attempting a write, so there is a known-good backup.
 #
