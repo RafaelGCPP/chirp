@@ -213,6 +213,14 @@ class RT18Radio(t18.T18Radio):
     def get_settings(self):
         top = t18.T18Radio.get_settings(self)
 
+        # The vendor CPS for the RT18 has no "Voice prompts" control --
+        # unlike its T18 siblings, this radio doesn't seem to have voice
+        # prompts at all. Drop the setting the base class adds
+        # unconditionally so we don't expose a non-existent feature.
+        basic = top[0]
+        if "voiceprompt" in basic:
+            del basic[basic["voiceprompt"]]
+
         password = RadioSettingGroup("password", "Password")
         top.append(password)
 
@@ -225,7 +233,9 @@ class RT18Radio(t18.T18Radio):
         rs.set_doc(
             "Password required (on the radio's own menu / vendor CPS) to "
             "enter programming mode. 1-6 digits, or blank to disable "
-            "password protection. Confirmed via passive USB capture of a "
+            "password protection. Change this field and upload to set a "
+            "new password, or clear it and upload to remove password "
+            "protection entirely. Confirmed via passive USB capture of a "
             "real 'set password' session; not confirmed to actually gate "
             "anything on the radio side beyond what was observed.")
         rs.set_apply_callback(_rt18_apply_password, self)
