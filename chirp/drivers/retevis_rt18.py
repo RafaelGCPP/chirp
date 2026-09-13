@@ -235,7 +235,7 @@ class RT18Radio(t18.T18Radio):
                                     autopad=False,
                                     charset="0123456789"))
         rs.set_doc(
-            "Password required (on the radio's own menu / vendor CPS) to "
+            "Password required (on the radio's vendor CPS) to "
             "enter programming mode. 1-6 digits, or blank to disable "
             "password protection. Change this field and upload to set a "
             "new password, or clear it and upload to remove password "
