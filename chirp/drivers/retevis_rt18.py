@@ -2,10 +2,10 @@
 #
 # EXPERIMENTAL / reverse-engineered driver for the Retevis RT18.
 #
-# This driver was NOT written from vendor documentation or an official
-# CHIRP contribution -- it was derived entirely from passive USB capture
-# analysis (Wireshark + USBPcap) of the vendor's Windows CPS talking to a
-# real RT18 over its programming cable. Treat with caution:
+# The clone protocol and 16-channel memory layout were derived from
+# passive USB capture analysis (Wireshark + USBPcap) of the vendor's
+# Windows CPS talking to a real RT18 over its programming cable. Treat
+# with caution:
 #
 #   * Channel memory (frequency, tones, power, narrow/wide, scan add,
 #     busy lock, scramble, compander, spec code) is expected to read
@@ -40,15 +40,12 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-import logging
 import time
 
-from chirp import chirp_common, directory, errors, memmap, util
+from chirp import chirp_common, directory, errors
 from chirp.drivers import radtel_t18 as t18
 from chirp.settings import RadioSetting, RadioSettingGroup, \
     RadioSettingValueString
-
-LOG = logging.getLogger(__name__)
 
 # Offset/length of the 6-digit programming password inside the memory
 # image, confirmed against rt18_write_password_to_radio.pcapng: writing
@@ -62,103 +59,9 @@ _PASSWORD_LEN = 6
 _PASSWORD_BLANK = b"\xff" * _PASSWORD_LEN
 
 
-def _rt18_get_password(radio):
-    raw = radio._mmap.get(_PASSWORD_ADDR, _PASSWORD_LEN)
-    if raw == _PASSWORD_BLANK:
-        return ""
-    return "".join(str(b) for b in raw if b != 0xFF)
-
-
-def _rt18_apply_password(setting, radio):
-    digits = [int(c) for c in str(setting.value).strip()]
-    raw = bytes(digits) + _PASSWORD_BLANK[len(digits):]
-    radio._mmap.set(_PASSWORD_ADDR, raw)
-
-
-def _rt18_enter_programming_mode(radio):
-    """Identical handshake to the Radtel T18 family (magic + ident +
-    ack), plus one extra step this RT18 firmware does before the normal
-    block read/write loop: a single 0x05 command that returns a 6-byte
-    "password" block (raw digit bytes, or 0xFF x6 when no password is
-    set), acknowledged the same way as a channel block."""
-    # Both captures (read and write sessions) show the vendor CPS
-    # asserting DTR then RTS on the cable, then waiting ~120-130ms
-    # before writing the magic string -- CHIRP's generic serial-open
-    # asserts both lines but writes the magic immediately, which can
-    # race the radio's cable/UART chip if the port was very recently
-    # opened/closed (observed as an intermittent "No response from
-    # radio" on repeated clone attempts). Mirror the vendor's delay.
-    time.sleep(0.15)
-    t18._t18_enter_programming_mode(radio)
-
-    serial = radio.pipe
-    try:
-        serial.write(b"\x05")
-        if radio._echo:
-            serial.read(1)  # Chew the echo
-        radio._password = serial.read(6)
-        LOG.debug("RT18 password block: %s",
-                  util.hexprint(radio._password))
-        serial.write(t18.CMD_ACK)
-        if radio._echo:
-            serial.read(1)  # Chew the echo
-        ack = serial.read(1)
-    except Exception:
-        raise errors.RadioError(
-            "Error communicating with radio (password step)")
-
-    if ack != t18.CMD_ACK:
-        raise errors.RadioError("Bad ACK after password step")
-
-
-def do_download(radio):
-    LOG.debug("RT18 download")
-    _rt18_enter_programming_mode(radio)
-
-    data = b""
-
-    status = chirp_common.Status()
-    status.msg = "Cloning from radio"
-    status.cur = 0
-    status.max = radio._memsize
-
-    for addr in range(0, radio._memsize, radio.BLOCK_SIZE):
-        status.cur = addr + radio.BLOCK_SIZE
-        radio.status_fn(status)
-
-        block = t18._t18_read_block(radio, addr, radio.BLOCK_SIZE)
-        data += block
-
-        LOG.debug("Address: %04x" % addr)
-        LOG.debug(util.hexprint(block))
-
-    t18._t18_exit_programming_mode(radio)
-
-    return memmap.MemoryMapBytes(data)
-
-
-def do_upload(radio):
-    LOG.debug("RT18 upload")
-    _rt18_enter_programming_mode(radio)
-
-    status = chirp_common.Status()
-    status.msg = "Uploading to radio"
-    status.cur = 0
-    status.max = radio._memsize
-
-    for start_addr, end_addr in radio._ranges:
-        for addr in range(start_addr, end_addr, radio.BLOCK_SIZE):
-            status.cur = addr + radio.BLOCK_SIZE
-            radio.status_fn(status)
-            t18._t18_write_block(radio, addr, radio.BLOCK_SIZE)
-
-    t18._t18_exit_programming_mode(radio)
-
-
 @directory.register
 class RT18Radio(t18.T18Radio):
-    """Retevis RT18 (EXPERIMENTAL, reverse-engineered -- see module
-    docstring above)."""
+    """Retevis RT18"""
 
     VENDOR = "Retevis"
     MODEL = "RT18"
@@ -207,12 +110,51 @@ class RT18Radio(t18.T18Radio):
     # a full image back (as do_upload always does) rewrites it too.
     _password = b""
 
-    def sync_in(self):
-        self._mmap = do_download(self)
-        self.process_mmap()
+    def _enter_programming_mode(self):
+        """Identical handshake to the Radtel T18 family (magic + ident
+        + ack), plus one extra step this RT18 firmware does before the
+        normal block read/write loop: a single 0x05 command that
+        returns a 6-byte "password" block (raw digit bytes, or 0xFF x6
+        when no password is set), acknowledged the same way as a
+        channel block."""
+        # Both captures (read and write sessions) show the vendor CPS
+        # asserting DTR then RTS on the cable, then waiting ~120-130ms
+        # before writing the magic string -- CHIRP's generic serial-open
+        # asserts both lines but writes the magic immediately, which can
+        # race the radio's cable/UART chip if the port was very recently
+        # opened/closed (observed as an intermittent "No response from
+        # radio" on repeated clone attempts). Mirror the vendor's delay.
+        time.sleep(0.15)
+        t18.T18Radio._enter_programming_mode(self)
 
-    def sync_out(self):
-        do_upload(self)
+        serial = self.pipe
+        try:
+            self.pipe.log("RT18 password step")
+            serial.write(b"\x05")
+            if self._echo:
+                serial.read(1)  # Chew the echo
+            self._password = serial.read(6)
+            serial.write(t18.CMD_ACK)
+            if self._echo:
+                serial.read(1)  # Chew the echo
+            ack = serial.read(1)
+        except Exception:
+            raise errors.RadioError(
+                "Error communicating with radio (password step)")
+
+        if ack != t18.CMD_ACK:
+            raise errors.RadioError("Bad ACK after password step")
+
+    def _rt18_get_password(self):
+        raw = self._mmap.get(_PASSWORD_ADDR, _PASSWORD_LEN)
+        if raw == _PASSWORD_BLANK:
+            return ""
+        return "".join(str(b) for b in raw if b != 0xFF)
+
+    def _rt18_apply_password(self, setting):
+        digits = [int(c) for c in str(setting.value).strip()]
+        raw = bytes(digits) + _PASSWORD_BLANK[len(digits):]
+        self._mmap.set(_PASSWORD_ADDR, raw)
 
     def get_settings(self):
         top = t18.T18Radio.get_settings(self)
@@ -231,7 +173,7 @@ class RT18Radio(t18.T18Radio):
         rs = RadioSetting(
             "rt18_password", "Programming password (blank = disabled)",
             RadioSettingValueString(0, _PASSWORD_LEN,
-                                    _rt18_get_password(self),
+                                    self._rt18_get_password(),
                                     autopad=False,
                                     charset="0123456789"))
         rs.set_doc(
@@ -242,7 +184,7 @@ class RT18Radio(t18.T18Radio):
             "protection entirely. Confirmed via passive USB capture of a "
             "real 'set password' session; not confirmed to actually gate "
             "anything on the radio side beyond what was observed.")
-        rs.set_apply_callback(_rt18_apply_password, self)
+        rs.set_apply_callback(self._rt18_apply_password)
         password.append(rs)
 
         return top
